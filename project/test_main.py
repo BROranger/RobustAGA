@@ -2,7 +2,7 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.loggers.neptune import NeptuneLogger
 import pytorch_lightning as pl
 import os
-import neptune.new as neptune
+import neptune
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from module import (
     LitClassifierAOPCTester,
@@ -10,6 +10,7 @@ from module import (
     LitClassifierRandPerturbSimilarityTester,
     LitClassifierXAIAdvTester,
     LitClassifierUpperBoundTester,
+    LitClassifierAdvTester
 )
 
 from module.utils.data_module import CIFAR10DataModule, ImageNet100DataModule, FlowersDataModule
@@ -24,11 +25,12 @@ def cli_main():
 
     parser = ArgumentParser(add_help=False, formatter_class=ArgumentDefaultsHelpFormatter)
     parser.add_argument("--seed", default=1234, type=int, help="random seeds")
-    parser.add_argument("--exp_id", default="", type=str)
+    parser.add_argument("--exp_id", default="adv_train", type=str)
     parser.add_argument("--loggername", default="default", type=str, help="a name of logger to be used")
     parser.add_argument("--project", default="default", type=str, help="a name of project to be used")
     parser.add_argument("--dataset", default="cifar10", type=str, help="dataset to be loaded")
-    parser.add_argument("--test_method", type=str, help="test method")
+    parser.add_argument("--test_method", default="adv_prd", type=str, help="test method")
+    parser.add_argument("--default_root_dir", default="./output/cifar10_result", type=str, help="dataset to be loaded")
 
     temp_args, _ = parser.parse_known_args()
     if temp_args.dataset == "cifar10":
@@ -44,6 +46,8 @@ def cli_main():
         Classifier = LitClassifierAOPCTester
     elif temp_args.test_method == "adv":
         Classifier = LitClassifierXAIAdvTester
+    elif temp_args.test_method == "adv_prd":
+        Classifier = LitClassifierAdvTester
     elif temp_args.test_method == "adv_aopc":
         Classifier = LitClassifierAdvAOPCTester
     elif temp_args.test_method == "rps":
@@ -57,7 +61,7 @@ def cli_main():
     parser = Dataset.add_data_specific_args(parser)
 
     _, _ = parser.parse_known_args()  # This command blocks the help message of Trainer class.
-    parser = pl.Trainer.add_argparse_args(parser)
+    # parser = pl.Trainer.add_argparse_args(parser)
     args = parser.parse_args()
 
     pl.seed_everything(args.seed)
@@ -96,7 +100,12 @@ def cli_main():
         raise Exception("Wrong logger name.")
 
     # ------------ trainer -------------
-    trainer = pl.Trainer.from_argparse_args(args, logger=logger, accelerator="gpu", deterministic=True)
+    trainer = pl.Trainer(logger=logger, 
+                        gradient_clip_val=0.5,
+                        gradient_clip_algorithm="norm",
+                        accelerator="gpu", 
+                        inference_mode= False,
+                        deterministic=True)
     # trainer = pl.Trainer.from_argparse_args(args, accelerator="gpu", logger=logger)
 
     model = Classifier(**vars(args))

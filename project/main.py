@@ -11,8 +11,9 @@ from module import (
     LitClassifier,
     LitHessianClassifier,
     LitL2PlusCosdClassifier,
+    LitAdvTrainClassifier
 )
-import neptune.new as neptune
+import neptune
 from module.utils.data_module import CIFAR10DataModule, ImageNet100DataModule, FlowersDataModule
 
 
@@ -21,18 +22,25 @@ def cli_main():
     # ------------ args -------------
     parser = ArgumentParser(add_help=False, formatter_class=ArgumentDefaultsHelpFormatter)
     parser.add_argument("--seed", default=1234, type=int, help="random seeds")
-    parser.add_argument("--regularizer", default="none", type=str, help="A regularizer to be used")
-    parser.add_argument("--loggername", default="default", type=str, help="a name of logger to be used")
+    parser.add_argument("--regularizer", default="adv_train", type=str, help="A regularizer to be used")
+    parser.add_argument("--loggername", default="tensorboard", type=str, help="a name of logger to be used")
     parser.add_argument("--project", default="default", type=str, help="a name of project to be used")
     parser.add_argument("--dataset", default="cifar10", type=str, help="dataset to be loaded")
+    parser.add_argument("--max_epochs", default=200, type=int, help="dataset to be loaded")
+    parser.add_argument("--accelerator", default="gpu", type=str, help="dataset to be loaded")
+    parser.add_argument("--devices", default=1, type=int, help="dataset to be loaded")
+    parser.add_argument("--default_root_dir", default="./output/cifar10_result", type=str, help="running result for this runtime")
 
     temp_args, _ = parser.parse_known_args()
+    
     if temp_args.regularizer == "none":
         Classifier = LitClassifier
     elif temp_args.regularizer == "hessian":
         Classifier = LitHessianClassifier
     elif temp_args.regularizer == "l2_cosd":
         Classifier = LitL2PlusCosdClassifier
+    elif temp_args.regularizer == "adv_train":
+        Classifier = LitAdvTrainClassifier
     else:
         raise Exception("regularizer name error")
 
@@ -47,9 +55,9 @@ def cli_main():
     parser = Dataset.add_data_specific_args(parser)
 
     _, _ = parser.parse_known_args()  # This command blocks the help message of Trainer class.
-    parser = pl.Trainer.add_argparse_args(parser)
+    # parser = Trainer()
     args = parser.parse_args()
-
+    args.model = "resnet18"
     pl.seed_everything(args.seed)
 
     # ------------ data -------------
@@ -67,7 +75,7 @@ def cli_main():
     elif args.loggername == "neptune":
         API_KEY = os.environ.get("NEPTUNE_API_TOKEN")
         ID = os.environ.get("NEPTUNE_ID")
-        run = neptune.init(
+        run = neptune.init_run(
             api_token=API_KEY, project=f"{ID}/{args.default_root_dir.split('/')[-1]}", capture_stdout=False
         )
         logger = NeptuneLogger(run=run, log_model_checkpoints=False)
@@ -93,13 +101,14 @@ def cli_main():
     lr_monitor = LearningRateMonitor(logging_interval="step")
 
     # ------------ trainer -------------
-    trainer = pl.Trainer.from_argparse_args(
-        args,
+    trainer = pl.Trainer(
+        accelerator=args.accelerator,
         check_val_every_n_epoch=1,
+        max_epochs=args.max_epochs,
         gradient_clip_val=0.5,
         gradient_clip_algorithm="norm",
-        track_grad_norm=2,
         logger=logger,
+        inference_mode=False,
         callbacks=[checkpoint_callback, lr_monitor],
     )
 

@@ -81,6 +81,7 @@ class CIFAR10DataModule(pl.LightningDataModule):
             batch_size=self.hparams.batch_size_test,
             shuffle=False,
             num_workers=self.hparams.num_workers,
+            persistent_workers=True
         )
 
     def predict_dataloader(self):

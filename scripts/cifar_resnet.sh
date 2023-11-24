@@ -1,7 +1,7 @@
 OPTIMIZER_ARGS='--optimizer adamw --weight_decay 1e-2 --milestones 100 150'
 DATA_ARGS='--dataset cifar10 --data_dir /data/cifar10'
 TRAINER_ARGS='--max_epochs 200 --accelerator gpu --devices 1'
-DEFAULT_ARGS='--model resnet18 --loggername tensorboard --default_root_dir ./output/YOUR_PROJECT'
+DEFAULT_ARGS='--model resnet18 --loggername tensorboard --default_root_dir ./output/cifar10_result'
 
 # Without regularization
 python project/main.py $OPTIMIZER_ARGS $DATA_ARGS $TRAINER_ARGS $DEFAULT_ARGS
@@ -16,3 +16,4 @@ python project/main.py $OPTIMIZER_ARGS $DATA_ARGS $TRAINER_ARGS $DEFAULT_ARGS
 # python project/main.py $OPTIMIZER_ARGS $DATA_ARGS $TRAINER_ARGS $DEFAULT_ARGS \
 # --regularizer l2_cosd --eps 4 --lamb_l2 0.01 --lamb_cos 0.1
 
+python project/main.py --optimizer adamw --weight_decay 1e-2 --milestones 100 150 --dataset cifar10 --data_dir /data/cifar10 --max_epochs 200 --accelerator gpu --devices 1 --model resnet18 --loggername tensorboard --default_root_dir ./output/cifar10_result --regularizer l2_cosd --eps 4 --lamb_l2 0.01 --lamb_cos 0.1

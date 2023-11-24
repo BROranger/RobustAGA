@@ -47,9 +47,9 @@ class LitClassifier(pl.LightningModule):
         loss = self.default_step(x, y, stage="valid")
 
     def test_step(self, batch, batch_idx):
-        x, y = batch
-
-        loss = self.default_step(x, y, stage="test")
+        with torch.enable_grad():
+            x, y = batch
+            loss = self.default_step(x, y, stage="test")
 
     def configure_optimizers(self):
         if self.hparams.optimizer == "sgd":

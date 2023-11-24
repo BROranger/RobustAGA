@@ -8,5 +8,6 @@ from .test_insertion import LitClassifierAOPCTester
 from .test_adv_insertion import LitClassifierAdvAOPCTester
 from .test_rps import LitClassifierRandPerturbSimilarityTester
 from .test_upper_bound import LitClassifierUpperBoundTester
-
+from .pl_AT_classifier import LitAdvTrainClassifier
+from .test_adv_prd import LitClassifierAdvTester
 

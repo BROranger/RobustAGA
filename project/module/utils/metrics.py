@@ -174,7 +174,7 @@ class Metrics:
         tensor1 = tensor1.flatten(start_dim=1)
         tensor2 = tensor2.flatten(start_dim=1)
 
-        return F.cosine_similarity(tensor1, tensor2)
+        return F.cosine_similarity(tensor1, tensor2).mean()
 
 
 def torch_to_numpy(tensor):
