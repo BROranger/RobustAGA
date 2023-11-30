@@ -1,5 +1,5 @@
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
-
+from module.utils.parser import str2bool
 import torch
 from . import LitClassifier
 from module.lrp_module.load_model import load_model
@@ -12,7 +12,7 @@ from module.utils.convert_activation import (
 )
 
 
-class LitClassifierXAIAdvTester(LitClassifier):
+class LitClassifierPrdAdvXAITester(LitClassifier):
     def __init__(
         self, **kwargs,
     ):
@@ -36,7 +36,8 @@ class LitClassifierXAIAdvTester(LitClassifier):
             self.model = load_model(self.hparams.model, self.hparams.activation_fn, self.hparams.softplus_beta)
         self.interpreter = Interpreter(self.model)
 
-        self.prepare_target()
+        if self.hparams.is_target:
+            self.prepare_target()
 
     def prepare_target(self):
         k = 5
@@ -67,14 +68,15 @@ class LitClassifierXAIAdvTester(LitClassifier):
             yhat_s = yhat_s.detach()
 
             # get adv imgs
-            x_adv = self.get_adv_img(x_s, y_s, yhat_s).detach().requires_grad_()
+            x_adv = self.get_adv_img(x_s, y_s, yhat_s, h_s).detach().requires_grad_()
             yhat_adv = self(x_adv)
             h_adv = self.interpreter.get_heatmap(
                 x_adv, y_s, yhat_adv, self.hparams.hm_method, self.hparams.hm_norm, self.hparams.hm_thres, False,
             ).detach()
             yhat_adv.detach()
 
-            h_t_expand = self.h_t.expand(h_adv.shape)
+            if self.hparams.is_target:
+                h_t_expand = self.h_t.expand(h_adv.shape)
 
             # metrics
             loss_f = F.mse_loss(yhat_s, yhat_adv, reduction="sum") / h_adv.shape[0]
@@ -90,15 +92,18 @@ class LitClassifierXAIAdvTester(LitClassifier):
             )
 
             self.log_hm_metrics(h_adv, h_s, f"{prefix}_(h_a,h_s)")
-            self.log_hm_metrics(h_adv, h_t_expand, f"{prefix}_(h_a,h_t)")
+            
+            if self.hparams.is_target:
+                self.log_hm_metrics(h_adv, h_t_expand, f"{prefix}_(h_a,h_t)")
 
-    def get_adv_img(self, x, y, yhat):
+    def get_adv_img(self, x, y, yhat, h_s):
         if self.hparams.activation_fn == "relu":
             convert_relu_to_softplus(self.model, beta=20.0)
 
         eps = (self.hparams.adv_eps / 255.0) * 5
         with torch.enable_grad():
-            x_adv = x.clone().detach().requires_grad_()
+            x_adv = x.clone().detach() + + 0.001 * torch.randn(x.shape).cuda().detach()
+            x_adv = x_adv.requires_grad_()
             adv_optimizer = torch.optim.Adam([x_adv], lr=4.0 * eps / self.hparams.adv_num_iter)
 
             # Do adversarial attack on XAI
@@ -116,11 +121,16 @@ class LitClassifierXAIAdvTester(LitClassifier):
                     True,
                     self.hparams,
                 )
-                h_t_expand = self.h_t.expand(h_adv.shape)
 
                 # calculate loss
-                loss_expl = F.mse_loss(h_adv, h_t_expand, reduction="sum") / h_adv.shape[0]
-                loss_output = F.mse_loss(yhat_adv, yhat.detach())
+                if self.hparams.is_target:
+                    h_t_expand = self.h_t.expand(h_adv.shape)
+                    loss_expl = F.mse_loss(h_adv, h_t_expand, reduction="sum") / h_adv.shape[0]
+                    loss_output = -F.mse_loss(yhat_adv, yhat.detach())
+                else:
+                    loss_expl = F.mse_loss(h_adv, h_s, reduction="sum") / h_adv.shape[0]
+                    loss_output = -F.cross_entropy(yhat_adv, y.detach())
+          
                 total_loss = self.hparams.adv_gamma * loss_expl + (1 - self.hparams.adv_gamma) * loss_output
 
                 # update adversarial example
@@ -178,6 +188,7 @@ class LitClassifierXAIAdvTester(LitClassifier):
         parser = LitClassifier.add_model_specific_args(parent_parser)
         parser = ArgumentParser(parents=[parser], add_help=False, formatter_class=ArgumentDefaultsHelpFormatter)
         group = parser.add_argument_group("Adversarial attack test")
+        group.add_argument("--is_target", type=str2bool, default=False)
         group.add_argument("--adv_num_iter", type=int, default=100)
         group.add_argument("--adv_eps", type=int, default=4)
         group.add_argument(

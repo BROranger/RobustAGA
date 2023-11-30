@@ -10,7 +10,8 @@ from module import (
     LitClassifierRandPerturbSimilarityTester,
     LitClassifierXAIAdvTester,
     LitClassifierUpperBoundTester,
-    LitClassifierAdvTester
+    LitClassifierAdvTester,
+    LitClassifierPrdAdvXAITester
 )
 
 from module.utils.data_module import CIFAR10DataModule, ImageNet100DataModule, FlowersDataModule
@@ -25,11 +26,11 @@ def cli_main():
 
     parser = ArgumentParser(add_help=False, formatter_class=ArgumentDefaultsHelpFormatter)
     parser.add_argument("--seed", default=1234, type=int, help="random seeds")
-    parser.add_argument("--exp_id", default="adv_train", type=str)
+    parser.add_argument("--exp_id", default="cos", type=str)
     parser.add_argument("--loggername", default="default", type=str, help="a name of logger to be used")
     parser.add_argument("--project", default="default", type=str, help="a name of project to be used")
     parser.add_argument("--dataset", default="cifar10", type=str, help="dataset to be loaded")
-    parser.add_argument("--test_method", default="adv_prd", type=str, help="test method")
+    parser.add_argument("--test_method", default="advprd_ex", type=str, help="test method")
     parser.add_argument("--default_root_dir", default="./output/cifar10_result", type=str, help="dataset to be loaded")
 
     temp_args, _ = parser.parse_known_args()
@@ -48,6 +49,8 @@ def cli_main():
         Classifier = LitClassifierXAIAdvTester
     elif temp_args.test_method == "adv_prd":
         Classifier = LitClassifierAdvTester
+    elif temp_args.test_method == "advprd_ex":
+        Classifier = LitClassifierPrdAdvXAITester
     elif temp_args.test_method == "adv_aopc":
         Classifier = LitClassifierAdvAOPCTester
     elif temp_args.test_method == "rps":
