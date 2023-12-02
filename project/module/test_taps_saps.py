@@ -1,5 +1,5 @@
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
-
+from module.utils.parser import str2bool
 import torch
 from . import LitClassifier
 from module.lrp_module.load_model import load_model
@@ -92,7 +92,9 @@ class LitClassifierXAIAdvTester(LitClassifier):
             )
 
             self.log_hm_metrics(h_adv, h_s, f"{prefix}_(h_a,h_s)")
-            self.log_hm_metrics(h_adv, h_t_expand, f"{prefix}_(h_a,h_t)")
+
+            if self.hparams.is_target:
+                self.log_hm_metrics(h_adv, h_t_expand, f"{prefix}_(h_a,h_t)")
 
     def get_adv_img(self, x, y, yhat, h_s):
         if self.hparams.activation_fn == "relu":
@@ -100,7 +102,8 @@ class LitClassifierXAIAdvTester(LitClassifier):
 
         eps = (self.hparams.adv_eps / 255.0) * 5
         with torch.enable_grad():
-            x_adv = x.clone().detach().requires_grad_()
+            x_adv = x.clone().detach() + + 0.001 * torch.randn(x.shape).cuda().detach()
+            x_adv = x_adv.requires_grad_()
             adv_optimizer = torch.optim.Adam([x_adv], lr=4.0 * eps / self.hparams.adv_num_iter)
 
             # Do adversarial attack on XAI
@@ -126,7 +129,7 @@ class LitClassifierXAIAdvTester(LitClassifier):
                     loss_output = F.mse_loss(yhat_adv, yhat.detach())
                 else:
                     loss_expl = -F.mse_loss(h_adv, h_s, reduction="sum") / h_adv.shape[0]
-                    loss_output = F.mse_loss(yhat_adv, yhat.detach())
+                    loss_output = F.cross_entropy(yhat_adv, y.detach())
 
                 total_loss = self.hparams.adv_gamma * loss_expl + (1 - self.hparams.adv_gamma) * loss_output
 
@@ -185,7 +188,7 @@ class LitClassifierXAIAdvTester(LitClassifier):
         parser = LitClassifier.add_model_specific_args(parent_parser)
         parser = ArgumentParser(parents=[parser], add_help=False, formatter_class=ArgumentDefaultsHelpFormatter)
         group = parser.add_argument_group("Adversarial attack test")
-        group.add_argument("--is_target", type=bool, default=True)
+        group.add_argument("--is_target", type=str2bool, default=False)
         group.add_argument("--adv_num_iter", type=int, default=100)
         group.add_argument("--adv_eps", type=int, default=4)
         group.add_argument(

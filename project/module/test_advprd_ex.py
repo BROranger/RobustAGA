@@ -100,11 +100,11 @@ class LitClassifierPrdAdvXAITester(LitClassifier):
         if self.hparams.activation_fn == "relu":
             convert_relu_to_softplus(self.model, beta=20.0)
 
-        eps = (self.hparams.adv_eps / 255.0) * 5
+        eps = (self.hparams.adv_eps / 255.0)
         with torch.enable_grad():
             x_adv = x.clone().detach() + + 0.001 * torch.randn(x.shape).cuda().detach()
             x_adv = x_adv.requires_grad_()
-            adv_optimizer = torch.optim.Adam([x_adv], lr=4.0 * eps / self.hparams.adv_num_iter)
+            adv_optimizer = torch.optim.Adam([x_adv], lr= 2/255.0)
 
             # Do adversarial attack on XAI
             for i in range(self.hparams.adv_num_iter):
@@ -138,7 +138,7 @@ class LitClassifierPrdAdvXAITester(LitClassifier):
                 adv_optimizer.step()
 
                 delta = torch.clamp(x_adv - x, -eps, eps)
-                x_adv.data = torch.clamp(x.data + delta.data, x.min(), x.max())
+                x_adv.data = torch.clamp(x.data + delta.data, 0, 1)
 
         if self.hparams.activation_fn == "relu":
             convert_softplus_to_relu(self.model)
@@ -190,7 +190,7 @@ class LitClassifierPrdAdvXAITester(LitClassifier):
         group = parser.add_argument_group("Adversarial attack test")
         group.add_argument("--is_target", type=str2bool, default=False)
         group.add_argument("--adv_num_iter", type=int, default=100)
-        group.add_argument("--adv_eps", type=int, default=4)
+        group.add_argument("--adv_eps", type=int, default=8)
         group.add_argument(
             "--adv_gamma", type=float, default=0.5, help="(1-r) loss_feature + r loss_hmt",
         )
