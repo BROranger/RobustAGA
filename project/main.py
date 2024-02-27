@@ -4,6 +4,7 @@ from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 import pytorch_lightning as pl
 from pytorch_lightning.loggers.neptune import NeptuneLogger
 from pytorch_lightning.loggers import WandbLogger
+from lightning.pytorch.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 import torch
 
@@ -11,7 +12,9 @@ from module import (
     LitClassifier,
     LitHessianClassifier,
     LitL2PlusCosdClassifier,
-    LitAdvTrainClassifier
+    LitAdvTrainClassifier,
+    LitTradesTrainClassifier,
+    LitAdaptiveRobustEXplanationTrainClassifier
 )
 import neptune
 from module.utils.data_module import CIFAR10DataModule, ImageNet100DataModule, FlowersDataModule
@@ -22,7 +25,7 @@ def cli_main():
     # ------------ args -------------
     parser = ArgumentParser(add_help=False, formatter_class=ArgumentDefaultsHelpFormatter)
     parser.add_argument("--seed", default=1234, type=int, help="random seeds")
-    parser.add_argument("--regularizer", default="adv_train", type=str, help="A regularizer to be used")
+    parser.add_argument("--regularizer", default="adptive_train", type=str, help="A regularizer to be used")
     parser.add_argument("--loggername", default="tensorboard", type=str, help="a name of logger to be used")
     parser.add_argument("--project", default="default", type=str, help="a name of project to be used")
     parser.add_argument("--dataset", default="cifar10", type=str, help="dataset to be loaded")
@@ -41,6 +44,10 @@ def cli_main():
         Classifier = LitL2PlusCosdClassifier
     elif temp_args.regularizer == "adv_train":
         Classifier = LitAdvTrainClassifier
+    elif temp_args.regularizer == "trades":
+        Classifier = LitTradesTrainClassifier
+    elif temp_args.regularizer == "adptive_train":
+        Classifier = LitAdaptiveRobustEXplanationTrainClassifier
     else:
         raise Exception("regularizer name error")
 
@@ -57,7 +64,6 @@ def cli_main():
     _, _ = parser.parse_known_args()  # This command blocks the help message of Trainer class.
     # parser = Trainer()
     args = parser.parse_args()
-    args.model = "resnet18"
     pl.seed_everything(args.seed)
 
     # ------------ data -------------
@@ -70,7 +76,7 @@ def cli_main():
     )
     # ------------ logger -------------
     if args.loggername == "tensorboard":
-        logger = True  # tensor board is a default logger of Trainer class
+        logger = TensorBoardLogger("train_logs", name="my_model")  # tensor board is a default logger of Trainer class
         dirpath = args.default_root_dir
     elif args.loggername == "neptune":
         API_KEY = os.environ.get("NEPTUNE_API_TOKEN")

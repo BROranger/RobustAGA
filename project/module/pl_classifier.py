@@ -18,8 +18,12 @@ class LitClassifier(pl.LightningModule):
 
         self.metric = Metrics()
         self.interpreter = Interpreter(self.model)
+        
+        self.mean = torch.tensor([0.4914, 0.4822, 0.4465]).reshape(1, 3, 1, 1).cuda()
+        self.std = torch.tensor([0.2023, 0.1994, 0.2010]).reshape(1, 3, 1, 1).cuda()
 
     def forward(self, x):
+        x = (x - self.mean) / self.std
         x = self.model(x)
         return x
 
@@ -83,7 +87,7 @@ class LitClassifier(pl.LightningModule):
     def add_model_specific_args(parent_parser):
         parser = ArgumentParser(parents=[parent_parser], add_help=False, formatter_class=ArgumentDefaultsHelpFormatter)
         group = parser.add_argument_group("Default classifier")
-        group.add_argument("--model", type=str, default="none", help="which model to be used")
+        group.add_argument("--model", type=str, default="resnet18", help="which model to be used")
         group.add_argument("--activation_fn", type=str, default="softplus", help="activation function of model")
         group.add_argument("--softplus_beta", type=float, default=3.0, help="beta of softplus")
         group.add_argument("--optimizer", type=str, default="adamw")

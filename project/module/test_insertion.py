@@ -36,6 +36,7 @@ class LitClassifierAOPCTester(LitClassifier):
                 x_s, y_s, yhat_s, self.hparams.hm_method, self.hparams.hm_norm, self.hparams.hm_thres, False,
             ).detach()
 
+        avg_aopc_prob = 0.0
         for i in range(self.hparams.aopc_iter):
             ratio = float(i) / self.hparams.aopc_iter
             x_p = self.perturbation(h_s, x_s, ratio=ratio)
@@ -48,6 +49,20 @@ class LitClassifierAOPCTester(LitClassifier):
             self.log(
                 f"aopc_insertion_method_{self.hparams.hm_method}_{ratio}", aopc_prob, prog_bar=True,
             )
+
+            avg_aopc_prob += aopc_prob
+
+        ratio = 0.99
+        x_p = self.perturbation(h_s, x_s, ratio=ratio)
+
+        logit = self(x_p)
+        prob = self.softmax(logit)
+
+        aopc_prob = prob[range(len(y_s)), y_s].detach().mean()
+        avg_aopc_prob += aopc_prob
+
+        avg_aopc_prob /= 20
+        self.log(f"avg_aopc_insertion_method_{self.hparams.hm_method}", avg_aopc_prob, prog_bar=True)
         return
 
     @staticmethod

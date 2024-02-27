@@ -26,7 +26,7 @@ def cli_main():
 
     parser = ArgumentParser(add_help=False, formatter_class=ArgumentDefaultsHelpFormatter)
     parser.add_argument("--seed", default=1234, type=int, help="random seeds")
-    parser.add_argument("--exp_id", default="cos", type=str)
+    parser.add_argument("--exp_id", default="normal_relu", type=str)
     parser.add_argument("--loggername", default="default", type=str, help="a name of logger to be used")
     parser.add_argument("--project", default="default", type=str, help="a name of project to be used")
     parser.add_argument("--dataset", default="cifar10", type=str, help="dataset to be loaded")

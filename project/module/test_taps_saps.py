@@ -52,9 +52,6 @@ class LitClassifierXAIAdvTester(LitClassifier):
 
         self.h_t = mask.cuda()
 
-    def forward(self, x):
-        x = self.model(x)
-        return x
 
     def test_step(self, batch, batch_idx):
         x_s, y_s = batch
@@ -129,7 +126,7 @@ class LitClassifierXAIAdvTester(LitClassifier):
                     loss_output = F.mse_loss(yhat_adv, yhat.detach())
                 else:
                     loss_expl = -F.mse_loss(h_adv, h_s, reduction="sum") / h_adv.shape[0]
-                    loss_output = F.cross_entropy(yhat_adv, y.detach())
+                    loss_output = F.mse_loss(yhat_adv, yhat.detach())
 
                 total_loss = self.hparams.adv_gamma * loss_expl + (1 - self.hparams.adv_gamma) * loss_output
 

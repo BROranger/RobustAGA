@@ -52,9 +52,6 @@ class LitClassifierPrdAdvXAITester(LitClassifier):
 
         self.h_t = mask.cuda()
 
-    def forward(self, x):
-        x = self.model(x)
-        return x
 
     def test_step(self, batch, batch_idx):
         x_s, y_s = batch
@@ -75,6 +72,25 @@ class LitClassifierPrdAdvXAITester(LitClassifier):
             ).detach()
             yhat_adv.detach()
 
+            # 根据mask，筛选出相应的 x_adv x_s  yhat_adv  y_s h_s h_adv
+            _, y_adv = torch.max(yhat_adv, 1)
+            _, y_hat_s = torch.max(yhat_s, 1)
+            mask = (y_adv != y_hat_s) 
+            true_h_s, true_h_adv = [], []
+            true_adv, true_x_s = [], []
+            for index, s in enumerate(mask):
+                if s == True:
+                    true_h_s.append(h_s[index])
+                    true_h_adv.append(h_adv[index])
+                    true_adv.append(x_adv[index])
+                    true_x_s.append(x_s[index])
+
+            true_adv = torch.stack(true_adv)
+            true_h_adv = torch.stack(true_h_adv)
+            true_h_s = torch.stack(true_h_s)
+            true_x_s = torch.stack(true_x_s)
+
+
             if self.hparams.is_target:
                 h_t_expand = self.h_t.expand(h_adv.shape)
 
@@ -92,9 +108,11 @@ class LitClassifierPrdAdvXAITester(LitClassifier):
             )
 
             self.log_hm_metrics(h_adv, h_s, f"{prefix}_(h_a,h_s)")
+            self.log_hm_metrics(true_h_adv, true_h_s, "successful_attack_adv")
             
             if self.hparams.is_target:
                 self.log_hm_metrics(h_adv, h_t_expand, f"{prefix}_(h_a,h_t)")
+                self.log_hm_metrics(true_h_adv, h_t_expand, "successful_attack_adv")
 
     def get_adv_img(self, x, y, yhat, h_s):
         if self.hparams.activation_fn == "relu":
@@ -103,8 +121,24 @@ class LitClassifierPrdAdvXAITester(LitClassifier):
         eps = (self.hparams.adv_eps / 255.0)
         with torch.enable_grad():
             x_adv = x.clone().detach() + + 0.001 * torch.randn(x.shape).cuda().detach()
+            for _ in range(self.hparams.test_perturb_steps):
+                x_adv.requires_grad = True
+                outputs = self(x_adv)
+
+                # Calculate loss
+                cost = F.cross_entropy(outputs, y)
+
+                # Update adversarial images
+                grad = torch.autograd.grad(
+                    cost, x_adv, retain_graph=False, create_graph=False
+                )[0]
+
+                x_adv = x_adv.detach() + self.hparams.test_step_size / 255.0 * grad.sign()
+                delta = torch.clamp(x_adv - x, min=-eps, max=eps)
+                x_adv = torch.clamp(x + delta, min=0, max=1).detach()
+                
             x_adv = x_adv.requires_grad_()
-            adv_optimizer = torch.optim.Adam([x_adv], lr= 2/255.0)
+            adv_optimizer = torch.optim.Adam([x_adv], lr= 2.0/255.0)
 
             # Do adversarial attack on XAI
             for i in range(self.hparams.adv_num_iter):
@@ -190,6 +224,8 @@ class LitClassifierPrdAdvXAITester(LitClassifier):
         group = parser.add_argument_group("Adversarial attack test")
         group.add_argument("--is_target", type=str2bool, default=False)
         group.add_argument("--adv_num_iter", type=int, default=100)
+        group.add_argument("--test_perturb_steps", type=int, default=20)
+        group.add_argument("--test_step_size", type=int, default=2)
         group.add_argument("--adv_eps", type=int, default=8)
         group.add_argument(
             "--adv_gamma", type=float, default=0.5, help="(1-r) loss_feature + r loss_hmt",

@@ -21,7 +21,7 @@ class CIFAR10DataModule(pl.LightningDataModule):
         dataset="cifar10",
         batch_size_train: int = 128,
         batch_size_test: int = 100,
-        normalization=True,
+        normalization=False,
         num_workers=4,
         decoy_patch_size=3,
         **kwargs
@@ -65,6 +65,7 @@ class CIFAR10DataModule(pl.LightningDataModule):
             batch_size=self.hparams.batch_size_train,
             shuffle=True,
             num_workers=self.hparams.num_workers,
+            persistent_workers=True
         )
 
     def val_dataloader(self):
@@ -73,6 +74,7 @@ class CIFAR10DataModule(pl.LightningDataModule):
             batch_size=self.hparams.batch_size_test,
             shuffle=False,
             num_workers=self.hparams.num_workers,
+            persistent_workers=True
         )
 
     def test_dataloader(self):

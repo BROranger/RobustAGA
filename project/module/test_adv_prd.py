@@ -5,19 +5,16 @@ from . import LitClassifier
 from module.lrp_module.load_model import load_model
 from module.utils.interpreter import Interpreter
 import torch.nn.functional as F
-
+import torchattacks
 
 class LitClassifierAdvTester(LitClassifier):
     def __init__(self, **kwargs, ):
         super().__init__(**kwargs)
         self.interpreter = Interpreter(self.model)
+        # self.attack = torchattacks.PGD(self.model.cuda(), random_start=False)
+        # self.attack.set_normalization_used(mean=(0.4914, 0.4822, 0.4465), std=(0.2023, 0.1994, 0.2010))
 
-        self.mean = torch.tensor([0.4914, 0.4822, 0.4465]).reshape(1, 3, 1, 1).cuda()
-        self.std = torch.tensor([0.2023, 0.1994, 0.2010]).reshape(1, 3, 1, 1).cuda()
 
-    def forward(self, x):
-        x = self.model(x)
-        return x
 
     def test_step(self, batch, batch_idx):
         x_s, y_s = batch
@@ -31,6 +28,9 @@ class LitClassifierAdvTester(LitClassifier):
             # get adv imgs
             x_adv = self.get_adv_img(x_s, y_s).detach().requires_grad_()
             yhat_adv = self(x_adv)
+
+            # if yhat_s
+
             h_adv = self.interpreter.get_heatmap(
                 x_adv, y_s, yhat_adv, self.hparams.hm_method, self.hparams.hm_norm, self.hparams.hm_thres, False,
             ).detach()
@@ -39,9 +39,26 @@ class LitClassifierAdvTester(LitClassifier):
             acc_adv = self.metric.get_accuracy(yhat_adv, y_s)
             acc = self.metric.get_accuracy(yhat_s, y_s)
 
+            # 根据mask，筛选出相应的 x_adv x_s  yhat_adv  y_s h_s h_adv
+            _, y_adv = torch.max(yhat_adv, 1)
+            mask = (y_adv != y_s) 
+            true_h_s, true_h_adv = [], []
+            true_adv, true_x_s = [], []
+            for index, s in enumerate(mask):
+                if s == True:
+                    true_h_s.append(h_s[index])
+                    true_h_adv.append(h_adv[index])
+                    true_adv.append(x_adv[index])
+                    true_x_s.append(x_s[index])
+
+            true_adv = torch.stack(true_adv)
+            true_h_adv = torch.stack(true_h_adv)
+            true_h_s = torch.stack(true_h_s)
+            true_x_s = torch.stack(true_x_s)
+
 
             prefix = (
-                f"adv_eps_{self.hparams.train_epsilon}_iter_{self.hparams.train_perturb_steps}"
+                f"adv_eps_{self.hparams.test_epsilon}_iter_{self.hparams.test_perturb_steps}"
             )
 
             # log results
@@ -49,27 +66,47 @@ class LitClassifierAdvTester(LitClassifier):
                 {f"{prefix}_acc_adv": acc_adv, f"{prefix}_acc_nor":acc}, prog_bar=True, sync_dist=True,
             )
             self.log_hm_metrics(h_adv, h_s, f"{prefix}_(h_a,h_s)")
+            self.log_hm_metrics(true_h_adv, true_h_s, "successful_attack_adv")
 
 
-    def get_adv_img(self, x, y):
-        with torch.enable_grad():
-            x = x.requires_grad_()
+    # def get_adv_img(self, x, y):
+    #     with torch.enable_grad():
+    #         x = x.requires_grad_()
+    #         x_adv = self.attack(x,y)
 
-            # generate adversarial example
-            x_adv = x.detach() + 0.001 * torch.randn(x.shape).cuda().detach()
-            if self.hparams.train_distance == 'l_inf':
-                for _ in range(self.hparams.train_perturb_steps):
-                    x_adv.requires_grad_()
-                   
-                    y_hat = self(x_adv) 
-                    cost = F.cross_entropy(y_hat, y)
-                    grad = torch.autograd.grad(cost, [x_adv])[0]
+    #     return x_adv.detach()
 
-                    x_adv = x_adv.detach() + self.hparams.train_step_size * torch.sign(grad.detach())
-                    x_adv = torch.min(torch.max(x_adv, x - self.hparams.train_epsilon), x + self.hparams.train_epsilon)
-                    x_adv = torch.clamp(x_adv, 0.0, 1.0)
+    def get_adv_img(self, images, labels):
+        images = images.clone().detach().to(self.device)
+        labels = labels.clone().detach().to(self.device)
 
-        return x_adv.detach()
+        loss = torch.nn.CrossEntropyLoss()
+        adv_images = images.clone().detach()
+
+        # if self.random_start:
+        #     # Starting at a uniformly random point
+        #     adv_images = adv_images + torch.empty_like(adv_images).uniform_(
+        #         -self.eps, self.eps
+        #     )
+        #     adv_images = torch.clamp(adv_images, min=0, max=1).detach()
+
+        for _ in range(self.hparams.test_perturb_steps):
+            adv_images.requires_grad = True
+            outputs = self(adv_images)
+
+            # Calculate loss
+            cost = loss(outputs, labels)
+
+            # Update adversarial images
+            grad = torch.autograd.grad(
+                cost, adv_images, retain_graph=False, create_graph=False
+            )[0]
+
+            adv_images = adv_images.detach() + self.hparams.test_step_size * grad.sign()
+            delta = torch.clamp(adv_images - images, min=-self.hparams.test_epsilon, max=self.hparams.test_epsilon)
+            adv_images = torch.clamp(images + delta, min=0, max=1).detach()
+
+        return adv_images
     
     def log_hm_metrics(self, h1, h2, name):
         loss = F.mse_loss(h1, h2, reduction="sum") / h1.shape[0]
@@ -100,11 +137,11 @@ class LitClassifierAdvTester(LitClassifier):
         parser = LitClassifier.add_model_specific_args(parent_parser)
         parser = ArgumentParser(parents=[parser], add_help=False, formatter_class=ArgumentDefaultsHelpFormatter)
         group = parser.add_argument_group("Adversarial examples test")
-        group.add_argument("--train_epsilon", type=float, default=8/255)
-        group.add_argument("--train_distance", type=str, default="l_inf")
-        group.add_argument("--train_step_size", type=float, default=2/255)
-        group.add_argument("--train_perturb_steps", type=int, default=20)
-        group.add_argument("--train_beta", type=float, default=1.0)
+        group.add_argument("--test_epsilon", type=float, default=8/255)
+        group.add_argument("--test_distance", type=str, default="l_inf")
+        group.add_argument("--test_step_size", type=float, default=2/255)
+        group.add_argument("--test_perturb_steps", type=int, default=50)
+        group.add_argument("--test_beta", type=float, default=1.0)
 
         group.add_argument("--hm_method", type=str, default="grad", help="interpretation method")
         group.add_argument("--hm_norm", type=str, default="standard")

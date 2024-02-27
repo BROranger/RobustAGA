@@ -11,4 +11,6 @@ from .test_upper_bound import LitClassifierUpperBoundTester
 from .pl_AT_classifier import LitAdvTrainClassifier
 from .test_adv_prd import LitClassifierAdvTester
 from .test_advprd_ex import LitClassifierPrdAdvXAITester
+from .pl_TD_classifier import LitTradesTrainClassifier
+from .pl_ART_classifier import LitAdaptiveRobustEXplanationTrainClassifier
 

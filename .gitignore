@@ -138,5 +138,6 @@ venv.bak/
 
 # seed project
 lightning_logs/
+train_logs
 MNIST
 .DS_Store
