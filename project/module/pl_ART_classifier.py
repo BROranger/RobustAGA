@@ -14,51 +14,67 @@ class LitAdaptiveRobustEXplanationTrainClassifier(LitClassifier):
     def default_step(self, x, y, stage):
         criterion_fn = lambda output, y: output[range(len(y)), y].sum()
         with torch.enable_grad():
-            images = x.clone().detach().to(self.device)
-            labels = y.clone().detach().to(self.device)
+            # images = x.clone().detach().to(self.device)
+            # labels = y.clone().detach().to(self.device)
 
+            batch_size = len(x)
             x.requires_grad = True
             y_hat = self(x)
             yc_hat = criterion_fn(y_hat, y)
             acc = self.metric.get_accuracy(y_hat, y)
             grad_s = torch.autograd.grad(outputs=yc_hat, inputs=x, create_graph=True, retain_graph=True)[0]
-            ce_loss = F.cross_entropy(y_hat, y, reduction="mean")
+            # ce_loss = F.cross_entropy(y_hat, y, reduction="mean")
 
-            # DeepFool 算法找到离模型边界最近的样本
-            batch_size = len(images)
-            correct = torch.tensor([True] * batch_size)
-            target_labels = labels.clone().detach().to(self.device)
-            curr_steps = 0
+            # # DeepFool 算法找到离模型边界最近的样本
+            # batch_size = len(images)
+            # correct = torch.tensor([True] * batch_size)
+            # target_labels = labels.clone().detach().to(self.device)
+            # curr_steps = 0
 
-            adv_images = []
-            for idx in range(batch_size):
-                image = images[idx : idx + 1].clone().detach()
-                adv_images.append(image)
+            # adv_images = []
+            # for idx in range(batch_size):
+            #     image = images[idx : idx + 1].clone().detach()
+            #     adv_images.append(image)
 
-            while (True in correct) and (curr_steps < self.hparams.step_size):
-                for idx in range(batch_size):
-                    if not correct[idx]:
-                        continue
-                    early_stop, pre, adv_image = self._forward_indiv(
-                        adv_images[idx], labels[idx]
-                    )
-                    adv_images[idx] = adv_image
-                    target_labels[idx] = pre
-                    if early_stop:
-                        correct[idx] = False
-                curr_steps += 1
+            # while (True in correct) and (curr_steps < self.hparams.step_size):
+            #     for idx in range(batch_size):
+            #         if not correct[idx]:
+            #             continue
+            #         early_stop, pre, adv_image = self._forward_indiv(
+            #             adv_images[idx], labels[idx]
+            #         )
+            #         adv_images[idx] = adv_image
+            #         target_labels[idx] = pre
+            #         if early_stop:
+            #             correct[idx] = False
+            #     curr_steps += 1
 
-            adv_images = torch.cat(adv_images).detach()
+            # adv_images = torch.cat(adv_images).detach()
 
-            adv_images.requires_grad = True
-            yhat_adv = self(adv_images)
+            x_adv = x.detach() + 0.001 * torch.randn(x.shape).cuda().detach()
+
+            for _ in range(self.hparams.perturb_steps):
+                x_adv.requires_grad_()
+                with torch.enable_grad():
+                    loss = F.cross_entropy(self(x_adv), y)
+                grad = torch.autograd.grad(loss, [x_adv])[0]
+                x_adv = x_adv.detach() + self.hparams.step_size * torch.sign(grad.detach())
+                x_adv = torch.min(torch.max(x_adv, x - self.hparams.epsilon), x + self.hparams.epsilon)
+                x_adv = torch.clamp(x_adv, 0.0, 1.0)
+
+            x_adv = torch.autograd.Variable(torch.clamp(x_adv, 0.0, 1.0), requires_grad=True)
+            yhat_adv = self(x_adv)
             yc_hat_adv = criterion_fn(yhat_adv, y)
-            grad_adv = torch.autograd.grad(outputs=yc_hat_adv, inputs=adv_images, create_graph=True, retain_graph=True)[0]
+            grad_adv = torch.autograd.grad(outputs=yc_hat_adv, inputs=x_adv, create_graph=True, retain_graph=True)[0]
+
+            _, y_adv = torch.max(yhat_adv, 1)
+            _, y_ps = torch.max(y_hat, 1)
+            mask = (y_adv == y_ps)
 
             true_adv_grads, false_adv_grads = [], []
             true_s_grads, false_s_grads = [], []
             for idx in range(batch_size):
-                if correct[idx] == True:
+                if mask[idx] == True:
                     true_adv_grads.append(grad_adv[idx])
                     true_s_grads.append(grad_s[idx])
                 else:
@@ -93,6 +109,8 @@ class LitAdaptiveRobustEXplanationTrainClassifier(LitClassifier):
             t_reg_loss = self.hparams.lamb_l2 * t_l2 + self.hparams.lamb_cos * t_cosd
             f_reg_loss = self.hparams.lamb_l2 * f_l2 + self.hparams.lamb_cos * f_cosd
             reg_loss = t_reg_loss - f_reg_loss
+
+            ce_loss = F.cross_entropy(yhat_adv, y, reduction="mean")
 
             loss = ce_loss + reg_loss
 
@@ -156,9 +174,13 @@ class LitAdaptiveRobustEXplanationTrainClassifier(LitClassifier):
         parser = LitClassifier.add_model_specific_args(parent_parser)
         parser = ArgumentParser(parents=[parser], add_help=False, formatter_class=ArgumentDefaultsHelpFormatter)
         group = parser.add_argument_group("ART classifier")
-        group.add_argument("--step_size", type=float, default=30)
+        # group.add_argument("--step_size", type=float, default=30)
         group.add_argument("--overshoot", type=int, default=0.02)
         group.add_argument("--lamb_l2", type=float, default=1.0)
         group.add_argument("--lamb_cos", type=float, default=1.0)
+        group.add_argument("--epsilon", type=float, default=8/255)
+        group.add_argument("--distance", type=str, default="l_inf")
+        group.add_argument("--step_size", type=float, default=2/255)
+        group.add_argument("--perturb_steps", type=int, default=10)
         
         return parser

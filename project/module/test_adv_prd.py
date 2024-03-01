@@ -41,7 +41,8 @@ class LitClassifierAdvTester(LitClassifier):
 
             # 根据mask，筛选出相应的 x_adv x_s  yhat_adv  y_s h_s h_adv
             _, y_adv = torch.max(yhat_adv, 1)
-            mask = (y_adv != y_s) 
+            _, y_ps = torch.max(yhat_s, 1)
+            mask = (y_adv != y_ps) 
             true_h_s, true_h_adv = [], []
             true_adv, true_x_s = [], []
             for index, s in enumerate(mask):
@@ -140,7 +141,7 @@ class LitClassifierAdvTester(LitClassifier):
         group.add_argument("--test_epsilon", type=float, default=8/255)
         group.add_argument("--test_distance", type=str, default="l_inf")
         group.add_argument("--test_step_size", type=float, default=2/255)
-        group.add_argument("--test_perturb_steps", type=int, default=50)
+        group.add_argument("--test_perturb_steps", type=int, default=20)
         group.add_argument("--test_beta", type=float, default=1.0)
 
         group.add_argument("--hm_method", type=str, default="grad", help="interpretation method")

@@ -72,6 +72,24 @@ class LitClassifierXAIAdvTester(LitClassifier):
             ).detach()
             yhat_adv.detach()
 
+            # 根据mask，筛选出相应的 x_adv x_s  yhat_adv  y_s h_s h_adv
+            _, y_adv = torch.max(yhat_adv, 1)
+            _, y_hat_s = torch.max(yhat_s, 1)
+            mask = (y_adv == y_hat_s) 
+            true_h_s, true_h_adv = [], []
+            true_adv, true_x_s = [], []
+            for index, s in enumerate(mask):
+                if s == True:
+                    true_h_s.append(h_s[index])
+                    true_h_adv.append(h_adv[index])
+                    true_adv.append(x_adv[index])
+                    true_x_s.append(x_s[index])
+
+            true_adv = torch.stack(true_adv)
+            true_h_adv = torch.stack(true_h_adv)
+            true_h_s = torch.stack(true_h_s)
+            true_x_s = torch.stack(true_x_s)
+
             if self.hparams.is_target:
                 h_t_expand = self.h_t.expand(h_adv.shape)
 
@@ -89,9 +107,11 @@ class LitClassifierXAIAdvTester(LitClassifier):
             )
 
             self.log_hm_metrics(h_adv, h_s, f"{prefix}_(h_a,h_s)")
+            self.log_hm_metrics(true_h_adv, true_h_s, "successful_attack_adv")
 
             if self.hparams.is_target:
                 self.log_hm_metrics(h_adv, h_t_expand, f"{prefix}_(h_a,h_t)")
+                self.log_hm_metrics(true_h_adv, h_t_expand, "successful_attack_adv")
 
     def get_adv_img(self, x, y, yhat, h_s):
         if self.hparams.activation_fn == "relu":
